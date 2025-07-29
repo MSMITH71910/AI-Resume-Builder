@@ -1,16 +1,15 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sentence_transformers import SentenceTransformer, util
-import PyPDF2
-import spacy
-import io
-import re
-from typing import Dict, List
-import json
-import openai
-import os
 from openai import OpenAI
 from dotenv import load_dotenv
+from typing import Dict, List
+import PyPDF2
+import spacy
+import json
+import io
+import re
+import os
 
 app = FastAPI(title="AI Resume Builder API", version="1.0.0")
 
