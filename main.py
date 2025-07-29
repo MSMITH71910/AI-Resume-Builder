@@ -16,17 +16,31 @@ app = FastAPI(title="AI Resume Builder API", version="1.0.0")
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-openai_client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+# Initialize OpenAI client with error handling
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("OPENAI_API_KEY environment variable is required")
 
-# Add CORS middleware
+openai_client = OpenAI(api_key=api_key)
+
+# Clear the API key from memory for security
+api_key = None
+
+# Configure CORS for development and production
+allowed_origins = [
+    "http://localhost:3000",  # Next.js dev server
+    "http://127.0.0.1:3000",  # Alternative localhost
+]
+
+# Add production origins from environment variable
+production_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
+allowed_origins.extend([origin.strip() for origin in production_origins if origin.strip()])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js dev server
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],  # Only allow necessary methods
     allow_headers=["*"],
 )
 
