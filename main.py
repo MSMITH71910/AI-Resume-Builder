@@ -158,125 +158,327 @@ def extract_contact_info(text: str) -> Dict[str, str]:
     
     return contact_info
 
+def extract_name_from_text(text: str) -> str:
+    """Extract name from resume text (usually first line)"""
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    if lines:
+        # First non-empty line is usually the name
+        first_line = lines[0]
+        # Skip if it looks like a header or section
+        if not any(word in first_line.lower() for word in ['resume', 'cv', 'curriculum', 'objective', 'summary']):
+            return first_line
+    return "Professional Candidate"
+
+def extract_experience_entries(text: str) -> List[Dict[str, str]]:
+    """Extract work experience entries from resume text"""
+    entries = []
+    lines = text.split('\n')
+    
+    # Look for experience section
+    in_experience = False
+    current_entry = {'title': '', 'company': '', 'dates': '', 'description': []}
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Check if we're entering experience section
+        if any(keyword in line.lower() for keyword in ['experience', 'work', 'employment', 'career']):
+            if len(line) < 50:  # Likely a section header
+                in_experience = True
+                continue
+        
+        # Check if we're leaving experience section
+        if in_experience and any(keyword in line.lower() for keyword in ['education', 'skills', 'projects', 'certifications']):
+            if len(line) < 50:  # Likely a section header
+                if current_entry['title'] or current_entry['company']:
+                    entries.append(current_entry.copy())
+                break
+        
+        if in_experience:
+            # Try to identify job title, company, dates
+            if '|' in line or ' at ' in line or ' - ' in line:
+                # Likely a job title/company line
+                if current_entry['title'] or current_entry['company']:
+                    entries.append(current_entry.copy())
+                    current_entry = {'title': '', 'company': '', 'dates': '', 'description': []}
+                
+                # Parse the line
+                parts = re.split(r'\s*[\|\-]\s*', line)
+                if len(parts) >= 2:
+                    current_entry['title'] = parts[0].strip()
+                    current_entry['company'] = parts[1].strip()
+                    if len(parts) >= 3:
+                        current_entry['dates'] = parts[2].strip()
+            elif line.startswith('•') or line.startswith('-'):
+                # Achievement/responsibility bullet point
+                current_entry['description'].append(line)
+            elif current_entry['title'] and not current_entry['dates'] and any(char.isdigit() for char in line):
+                # Might be dates
+                current_entry['dates'] = line
+            elif current_entry['title']:
+                # Additional description
+                current_entry['description'].append(line)
+    
+    # Add the last entry
+    if current_entry['title'] or current_entry['company']:
+        entries.append(current_entry)
+    
+    return entries
+
+def extract_education_entries(text: str) -> List[str]:
+    """Extract education entries from resume text"""
+    entries = []
+    lines = text.split('\n')
+    
+    in_education = False
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Check if we're entering education section
+        if any(keyword in line.lower() for keyword in ['education', 'academic', 'qualification', 'degree']):
+            if len(line) < 50:  # Likely a section header
+                in_education = True
+                continue
+        
+        # Check if we're leaving education section
+        if in_education and any(keyword in line.lower() for keyword in ['experience', 'skills', 'projects', 'certifications']):
+            if len(line) < 50:  # Likely a section header
+                break
+        
+        if in_education:
+            entries.append(line)
+    
+    return entries
+
+def extract_actual_skills_from_text(text: str) -> List[str]:
+    """Extract actual skills mentioned in the resume text"""
+    # Common technical skills to look for
+    common_skills = [
+        'Python', 'JavaScript', 'Java', 'C++', 'C#', 'PHP', 'Ruby', 'Go', 'Rust',
+        'React', 'Angular', 'Vue', 'Node.js', 'Express', 'Django', 'Flask',
+        'HTML', 'CSS', 'SQL', 'MongoDB', 'PostgreSQL', 'MySQL',
+        'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Git', 'Linux',
+        'Machine Learning', 'AI', 'Data Analysis', 'Excel', 'Word', 'PowerPoint'
+    ]
+    
+    found_skills = []
+    text_lower = text.lower()
+    
+    for skill in common_skills:
+        if skill.lower() in text_lower:
+            found_skills.append(skill)
+    
+    return found_skills
+
+def is_technical_skill(skill: str) -> bool:
+    """Determine if a skill is technical or soft skill"""
+    technical_keywords = [
+        'python', 'javascript', 'java', 'react', 'node', 'sql', 'html', 'css',
+        'aws', 'docker', 'git', 'linux', 'database', 'api', 'framework',
+        'programming', 'development', 'software', 'web', 'mobile', 'cloud'
+    ]
+    
+    return any(keyword in skill.lower() for keyword in technical_keywords)
+
+def create_intelligent_summary(experience_entries: List[Dict], actual_skills: List[str], 
+                             matching_skills: List[str], missing_skills: List[str], job_desc: str) -> str:
+    """Create an intelligent professional summary based on actual experience"""
+    
+    # Determine years of experience
+    years_exp = "experienced"
+    if experience_entries:
+        if len(experience_entries) >= 3:
+            years_exp = "senior"
+        elif len(experience_entries) >= 2:
+            years_exp = "experienced"
+        else:
+            years_exp = "motivated"
+    
+    # Determine primary field
+    field = "professional"
+    job_lower = job_desc.lower()
+    if any(word in job_lower for word in ['developer', 'software', 'programming']):
+        field = "software developer"
+    elif any(word in job_lower for word in ['analyst', 'data', 'business intelligence']):
+        field = "analyst"
+    elif any(word in job_lower for word in ['manager', 'management', 'lead']):
+        field = "professional"
+    
+    # Build summary
+    summary_parts = []
+    summary_parts.append(f"{years_exp.title()} {field}")
+    
+    if matching_skills:
+        top_skills = matching_skills[:3]
+        summary_parts.append(f"with expertise in {', '.join(top_skills)}")
+    
+    if missing_skills:
+        priority_missing = missing_skills[:2]
+        summary_parts.append(f"Seeking to expand capabilities in {', '.join(priority_missing)}")
+    
+    summary_parts.append("Committed to delivering high-quality results and continuous professional development")
+    
+    return ". ".join(summary_parts) + "."
+
+def rewrite_experience_entry(entry: Dict[str, str], job_desc: str, matching_skills: List[str]) -> List[str]:
+    """Rewrite a single experience entry with improvements"""
+    result = []
+    
+    # Job title and company
+    if entry['title'] and entry['company']:
+        title_line = f"{entry['title']} | {entry['company']}"
+        if entry['dates']:
+            title_line += f" | {entry['dates']}"
+        result.append(title_line)
+    
+    # Enhanced descriptions
+    if entry['description']:
+        for desc in entry['description']:
+            # Enhance bullet points with action verbs and metrics
+            enhanced_desc = enhance_bullet_point(desc, matching_skills)
+            result.append(enhanced_desc)
+    else:
+        # Generate generic achievements if none provided
+        result.append("• Contributed to team objectives and organizational goals")
+        result.append("• Collaborated effectively with cross-functional teams")
+    
+    return result
+
+def enhance_bullet_point(bullet: str, matching_skills: List[str]) -> str:
+    """Enhance a bullet point with better action verbs and structure"""
+    
+    # Remove existing bullet if present
+    clean_bullet = bullet.lstrip('•-').strip()
+    
+    # Action verbs to replace weak verbs
+    action_verbs = {
+        'worked': 'collaborated',
+        'did': 'executed',
+        'made': 'developed',
+        'helped': 'assisted',
+        'used': 'utilized',
+        'was responsible': 'managed'
+    }
+    
+    # Replace weak verbs
+    enhanced = clean_bullet
+    for weak, strong in action_verbs.items():
+        enhanced = re.sub(rf'\b{weak}\b', strong, enhanced, flags=re.IGNORECASE)
+    
+    # Ensure it starts with capital letter
+    if enhanced:
+        enhanced = enhanced[0].upper() + enhanced[1:]
+    
+    return f"• {enhanced}"
+
 def generate_improved_resume(resume_text: str, job_desc: str, missing_skills: List[str], 
                            matching_skills: List[str]) -> str:
-    """Generate an improved version of the resume"""
+    """Generate a completely rewritten and improved version of the resume"""
     
-    # Parse the original resume
-    sections = parse_resume_sections(resume_text)
+    # Extract contact information
     contact_info = extract_contact_info(resume_text)
+    
+    # Parse resume into structured sections
+    lines = resume_text.split('\n')
+    
+    # Extract actual content from resume
+    name = contact_info['name'] or extract_name_from_text(resume_text)
+    email = contact_info['email']
+    phone = contact_info['phone']
+    
+    # Extract experience entries
+    experience_entries = extract_experience_entries(resume_text)
+    
+    # Extract education entries  
+    education_entries = extract_education_entries(resume_text)
+    
+    # Extract actual skills from resume text
+    actual_skills = extract_actual_skills_from_text(resume_text)
     
     # Generate improved resume
     improved_resume = []
     
-    # Header with contact info
+    # Professional Header
     improved_resume.append("=" * 60)
-    improved_resume.append(f"  {contact_info['name'].upper() or 'YOUR NAME'}")
+    improved_resume.append(f"  {name.upper()}")
     improved_resume.append("=" * 60)
     
     contact_line = []
-    if contact_info['email']:
-        contact_line.append(f"📧 {contact_info['email']}")
-    if contact_info['phone']:
-        contact_line.append(f"📱 {contact_info['phone']}")
-    if contact_info['linkedin']:
-        contact_line.append(f"💼 {contact_info['linkedin']}")
-    if contact_info['github']:
-        contact_line.append(f"💻 {contact_info['github']}")
+    if email:
+        contact_line.append(f"📧 {email}")
+    if phone:
+        contact_line.append(f"📱 {phone}")
     
     if contact_line:
         improved_resume.append(" | ".join(contact_line))
     improved_resume.append("")
     
-    # Professional Summary
+    # Professional Summary (Rewritten based on actual content)
     improved_resume.append("🎯 PROFESSIONAL SUMMARY")
     improved_resume.append("-" * 25)
     
-    if sections['summary'].strip():
-        # Enhance existing summary with job-relevant keywords
-        summary = sections['summary'].strip()
-        # Add missing skills context
-        if missing_skills:
-            summary += f" Seeking to leverage expertise and develop skills in {', '.join(missing_skills[:3])}."
-    else:
-        # Generate a basic summary
-        summary = f"Results-driven professional with expertise in {', '.join(matching_skills[:3]) if matching_skills else 'various technologies'}. "
-        summary += f"Passionate about delivering high-quality solutions and continuously learning new technologies including {', '.join(missing_skills[:2]) if missing_skills else 'emerging tools'}."
-    
+    # Create intelligent summary based on actual experience
+    summary = create_intelligent_summary(experience_entries, actual_skills, matching_skills, missing_skills, job_desc)
     improved_resume.append(summary)
     improved_resume.append("")
     
-    # Skills Section (Enhanced)
+    # Technical Skills (Enhanced with actual skills)
     improved_resume.append("🛠️ TECHNICAL SKILLS")
     improved_resume.append("-" * 20)
     
-    all_skills = matching_skills.copy()
-    # Add some missing skills as "learning" or "familiar with"
-    if missing_skills:
-        learning_skills = missing_skills[:3]
-        all_skills.extend([f"{skill} (Learning)" for skill in learning_skills])
+    # Combine actual skills with job-relevant skills
+    all_skills = list(set(actual_skills + matching_skills))
+    
+    # Add high-priority missing skills as "developing" or "familiar"
+    priority_missing = [skill for skill in missing_skills[:4] if skill.lower() not in [s.lower() for s in all_skills]]
     
     if all_skills:
-        # Group skills by category (basic categorization)
-        tech_skills = [s for s in all_skills if any(tech in s.lower() for tech in 
-                      ['python', 'java', 'javascript', 'react', 'node', 'sql', 'html', 'css', 'git'])]
-        other_skills = [s for s in all_skills if s not in tech_skills]
+        # Categorize skills intelligently
+        tech_skills = [s for s in all_skills if is_technical_skill(s)]
+        soft_skills = [s for s in all_skills if not is_technical_skill(s)]
         
         if tech_skills:
-            improved_resume.append(f"• Programming & Technologies: {', '.join(tech_skills)}")
-        if other_skills:
-            improved_resume.append(f"• Additional Skills: {', '.join(other_skills)}")
-    else:
-        improved_resume.append("• [Add your technical skills here]")
+            improved_resume.append(f"• Technical: {', '.join(tech_skills)}")
+        if priority_missing:
+            improved_resume.append(f"• Developing: {', '.join(priority_missing)}")
+        if soft_skills:
+            improved_resume.append(f"• Additional: {', '.join(soft_skills)}")
     
     improved_resume.append("")
     
-    # Experience Section
-    if sections['experience'].strip():
+    # Professional Experience (Completely rewritten)
+    if experience_entries:
         improved_resume.append("💼 PROFESSIONAL EXPERIENCE")
         improved_resume.append("-" * 28)
         
-        # Clean up and format experience
-        experience_text = sections['experience'].strip()
-        # Add bullet points if missing
-        experience_lines = experience_text.split('\n')
-        for line in experience_lines:
-            line = line.strip()
-            if line:
-                if not line.startswith('•') and not line.startswith('-'):
-                    if any(word in line.lower() for word in ['company', 'inc', 'corp', 'llc']) or len(line.split()) <= 6:
-                        improved_resume.append(f"\n{line}")  # Company/title line
-                    else:
-                        improved_resume.append(f"• {line}")  # Achievement line
-                else:
-                    improved_resume.append(line)
-        improved_resume.append("")
-    
-    # Education Section
-    if sections['education'].strip():
-        improved_resume.append("🎓 EDUCATION")
-        improved_resume.append("-" * 12)
-        improved_resume.append(sections['education'].strip())
-        improved_resume.append("")
-    
-    # Additional sections
-    for section_name, content in sections.items():
-        if section_name not in ['contact', 'summary', 'experience', 'education', 'skills'] and content.strip():
-            improved_resume.append(f"📋 {section_name.upper()}")
-            improved_resume.append("-" * (len(section_name) + 4))
-            improved_resume.append(content.strip())
+        for entry in experience_entries:
+            # Rewrite each experience entry
+            improved_entry = rewrite_experience_entry(entry, job_desc, matching_skills)
+            improved_resume.extend(improved_entry)
             improved_resume.append("")
     
-    # Job Match Optimization Tips
+    # Education (Reformatted)
+    if education_entries:
+        improved_resume.append("🎓 EDUCATION")
+        improved_resume.append("-" * 12)
+        
+        for entry in education_entries:
+            improved_resume.append(f"• {entry}")
+        improved_resume.append("")
+    
+    # Optimization suggestions
     improved_resume.append("💡 OPTIMIZATION SUGGESTIONS")
     improved_resume.append("-" * 28)
     improved_resume.append("Based on the job description analysis:")
     
     if missing_skills:
         improved_resume.append(f"• Consider highlighting experience with: {', '.join(missing_skills[:5])}")
-    
     if matching_skills:
-        improved_resume.append(f"• Emphasize your expertise in: {', '.join(matching_skills[:5])}")
+        improved_resume.append(f"• Emphasize your expertise in: {', '.join(matching_skills[:3])}")
     
     improved_resume.append("• Quantify achievements with specific metrics and results")
     improved_resume.append("• Use action verbs and job-specific keywords")
