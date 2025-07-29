@@ -285,28 +285,70 @@ def generate_improved_resume(resume_text: str, job_desc: str, missing_skills: Li
     return '\n'.join(improved_resume)
 
 def extract_text_from_pdf(file):
-    """Extract text from PDF with error handling"""
+    """Extract text from PDF with enhanced error handling and multiple methods"""
     try:
-        reader = PyPDF2.PdfReader(io.BytesIO(file))
-        text = ""
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+        # Method 1: Try PyPDF2 with strict=False
+        try:
+            reader = PyPDF2.PdfReader(io.BytesIO(file), strict=False)
+            text = ""
+            for page in reader.pages:
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                except Exception:
+                    continue
+            
+            if text.strip():
+                return text.strip()
+        except Exception:
+            pass
         
-        if not text.strip():
-            raise ValueError("No text could be extracted from the PDF")
+        # Method 2: Try with different PyPDF2 settings
+        try:
+            file_obj = io.BytesIO(file)
+            reader = PyPDF2.PdfReader(file_obj)
+            text = ""
+            for i, page in enumerate(reader.pages):
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                except Exception:
+                    # Skip problematic pages
+                    continue
+            
+            if text.strip():
+                return text.strip()
+        except Exception:
+            pass
         
-        return text.strip()
+        # If all methods fail, provide helpful error message
+        raise ValueError("Unable to extract text from this PDF. The file may be corrupted, password-protected, or contain only images. Please try a different PDF or convert it to text format.")
+        
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error processing PDF: {str(e)}")
+        if "EOF marker not found" in str(e):
+            raise HTTPException(
+                status_code=400, 
+                detail="PDF file appears to be corrupted or incomplete. Please try re-saving or re-exporting your PDF and upload again."
+            )
+        elif "password" in str(e).lower():
+            raise HTTPException(
+                status_code=400, 
+                detail="This PDF is password-protected. Please remove the password and try again."
+            )
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Error processing PDF: {str(e)}. Please try a different PDF file or paste your resume text directly."
+            )
 
 @app.post("/tailor-resume")
 async def tailor_resume(
     resume: UploadFile = File(...),
     job_desc: str = Form(...)
 ):
-    """Analyze resume against job description and provide tailoring suggestions"""
+    """Analyze PDF resume against job description and provide tailoring suggestions"""
     
     # Validate inputs
     if not resume.filename.lower().endswith('.pdf'):
@@ -363,10 +405,69 @@ async def tailor_resume(
             }
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing resume: {str(e)}")
+
+@app.post("/tailor-resume-text")
+async def tailor_resume_text(
+    resume_text: str = Form(...),
+    job_desc: str = Form(...)
+):
+    """Analyze resume text against job description and provide tailoring suggestions"""
+    
+    # Validate inputs
+    if not resume_text.strip():
+        raise HTTPException(status_code=400, detail="Resume text cannot be empty")
+    
+    if not job_desc.strip():
+        raise HTTPException(status_code=400, detail="Job description cannot be empty")
+    
+    try:
+        # Extract skills from resume and job description
+        resume_skills = extract_skills(resume_text)
+        job_skills = extract_skills(job_desc)
+        
+        # Find missing and matching skills
+        missing_skills = [skill for skill in job_skills if skill.lower() not in [rs.lower() for rs in resume_skills]]
+        matching_skills = [skill for skill in job_skills if skill.lower() in [rs.lower() for rs in resume_skills]]
+        
+        # Calculate similarity
+        embeddings = model.encode([resume_text, job_desc])
+        similarity = util.cos_sim(embeddings[0], embeddings[1]).item()
+        
+        # Generate recommendations
+        recommendations = []
+        if similarity < 0.7:
+            recommendations.append("Consider adding more relevant keywords from the job description")
+            recommendations.append("Highlight experiences that match the job requirements")
+        if missing_skills:
+            recommendations.append(f"Consider adding these skills: {', '.join(missing_skills[:5])}")
+        if similarity >= 0.85:
+            recommendations.append("Excellent match! Your resume aligns well with the job requirements")
+        
+        # Generate improved resume
+        improved_resume = generate_improved_resume(resume_text, job_desc, missing_skills, matching_skills)
+        
+        # Return comprehensive results
+        return {
+            "similarity_score": similarity,
+            "resume_text": resume_text[:1000] + "..." if len(resume_text) > 1000 else resume_text,
+            "job_desc": job_desc,
+            "resume_skills": resume_skills,
+            "job_skills": job_skills,
+            "missing_skills": missing_skills,
+            "matching_skills": matching_skills,
+            "recommendations": recommendations,
+            "improved_resume": improved_resume,
+            "analysis": {
+                "total_resume_skills": len(resume_skills),
+                "total_job_skills": len(job_skills),
+                "skill_match_percentage": (len(matching_skills) / len(job_skills) * 100) if job_skills else 0
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing resume: {str(e)}")
 
 @app.get("/")
 async def root():

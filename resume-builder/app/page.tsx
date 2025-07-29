@@ -4,6 +4,8 @@ import { useState } from 'react';
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
+  const [resumeText, setResumeText] = useState('');
+  const [inputMethod, setInputMethod] = useState<'pdf' | 'text'>('pdf');
   const [jobDescription, setJobDescription] = useState('');
   interface AnalysisResult {
     similarity_score: number;
@@ -35,18 +37,23 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !jobDescription) return;
+    if ((inputMethod === 'pdf' && !file) || (inputMethod === 'text' && !resumeText) || !jobDescription) return;
 
     setLoading(true);
     setError('');
     setResult(null);
     
     const formData = new FormData();
-    formData.append('resume', file);
+    if (inputMethod === 'pdf') {
+      formData.append('resume', file!);
+    } else {
+      formData.append('resume_text', resumeText);
+    }
     formData.append('job_desc', jobDescription);
 
     try {
-      const response = await fetch('http://localhost:8000/tailor-resume', {
+      const endpoint = inputMethod === 'pdf' ? '/tailor-resume' : '/tailor-resume-text';
+      const response = await fetch(`http://localhost:8000${endpoint}`, {
         method: 'POST',
         body: formData,
       });
@@ -83,11 +90,40 @@ export default function Home() {
         <div className="max-w-4xl mx-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 mb-8">
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* File Upload */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Upload Resume (PDF)
-                </label>
+              {/* Input Method Selector */}
+              <div className="flex justify-center mb-6">
+                <div className="bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setInputMethod('pdf')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                      inputMethod === 'pdf'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white'
+                    }`}
+                  >
+                    📄 Upload PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInputMethod('text')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                      inputMethod === 'text'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white'
+                    }`}
+                  >
+                    📝 Paste Text
+                  </button>
+                </div>
+              </div>
+
+              {/* Resume Input */}
+              {inputMethod === 'pdf' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Upload Resume (PDF)
+                  </label>
                 <div className="relative">
                   <input
                     type="file"
@@ -104,12 +140,50 @@ export default function Home() {
                              bg-gray-50 dark:bg-gray-700 p-3"
                   />
                 </div>
-                {file && (
-                  <p className="mt-2 text-sm text-green-600 dark:text-green-400">
-                    ✓ {file.name} selected
-                  </p>
-                )}
-              </div>
+                  {file && (
+                    <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+                      ✓ {file.name} selected
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Resume Text
+                  </label>
+                  <textarea
+                    value={resumeText}
+                    onChange={(e) => setResumeText(e.target.value)}
+                    placeholder="Paste your resume text here...
+
+Example:
+John Doe
+john.doe@email.com
+(555) 123-4567
+
+Objective
+Looking for a software development position
+
+Experience
+Software Developer at Tech Corp
+- Worked on web applications
+- Used Python and JavaScript
+
+Skills
+Python, JavaScript, HTML, CSS"
+                    rows={12}
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 
+                             rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                             bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                             placeholder-gray-500 dark:placeholder-gray-400"
+                  />
+                  {resumeText && (
+                    <p className="mt-2 text-sm text-green-600 dark:text-green-400">
+                      ✓ Resume text added ({resumeText.length} characters)
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Job Description */}
               <div>
@@ -131,7 +205,7 @@ export default function Home() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={!file || !jobDescription || loading}
+                disabled={((inputMethod === 'pdf' && !file) || (inputMethod === 'text' && !resumeText)) || !jobDescription || loading}
                 className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 
                          hover:from-blue-700 hover:to-indigo-700 
                          disabled:from-gray-400 disabled:to-gray-500
