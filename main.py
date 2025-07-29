@@ -7,8 +7,20 @@ import io
 import re
 from typing import Dict, List
 import json
+import openai
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
 
 app = FastAPI(title="AI Resume Builder API", version="1.0.0")
+
+# Load environment variables
+load_dotenv()
+
+# Initialize OpenAI client
+openai_client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -375,6 +387,161 @@ def enhance_bullet_point(bullet: str, matching_skills: List[str]) -> str:
     
     return f"• {enhanced}"
 
+def generate_improved_resume_with_ai(resume_text: str, job_desc: str, missing_skills: List[str], 
+                                   matching_skills: List[str]) -> str:
+    """Generate AI-powered resume rewrite using OpenAI GPT"""
+    
+    try:
+        # Create a comprehensive prompt for AI resume rewriting
+        prompt = f"""
+You are an expert resume writer and career coach. Your task is to completely rewrite and optimize a resume to perfectly match a specific job description.
+
+ORIGINAL RESUME:
+{resume_text}
+
+TARGET JOB DESCRIPTION:
+{job_desc}
+
+ANALYSIS RESULTS:
+- Matching Skills: {', '.join(matching_skills) if matching_skills else 'None identified'}
+- Missing Skills: {', '.join(missing_skills) if missing_skills else 'None identified'}
+
+INSTRUCTIONS:
+1. COMPLETELY REWRITE the resume content (don't just suggest changes)
+2. Tailor ALL experience descriptions to highlight relevance to the target job
+3. Rewrite bullet points using strong action verbs and quantifiable achievements
+4. Enhance job titles and descriptions to show relevance to target role
+5. Create a compelling professional summary that speaks directly to the job requirements
+6. Reorganize and enhance skills section to prioritize job-relevant abilities
+7. Add missing skills as "developing" or "familiar with" where appropriate
+8. Use professional formatting with clear sections and bullet points
+9. Ensure the rewritten resume tells a story of progression toward the target role
+10. Make every word count - remove fluff and add substance
+
+FORMATTING REQUIREMENTS:
+- Use clear section headers with emojis (🎯 PROFESSIONAL SUMMARY, 💼 EXPERIENCE, 🛠️ SKILLS, 🎓 EDUCATION)
+- Use bullet points (•) for all lists
+- Include contact information at the top
+- Professional, ATS-friendly formatting
+- Quantify achievements wherever possible
+
+OUTPUT: Provide ONLY the complete rewritten resume, no explanations or comments.
+"""
+
+        # Call OpenAI API
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert resume writer who creates compelling, job-tailored resumes that get interviews."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2000,
+            temperature=0.7
+        )
+        
+        ai_resume = response.choices[0].message.content.strip()
+        
+        # Add optimization suggestions at the end
+        ai_resume += "\n\n💡 AI OPTIMIZATION NOTES\n" + "-" * 25
+        ai_resume += "\nThis resume has been AI-optimized for maximum job relevance:"
+        
+        if missing_skills:
+            ai_resume += f"\n• Added focus on: {', '.join(missing_skills[:3])}"
+        if matching_skills:
+            ai_resume += f"\n• Emphasized your strengths in: {', '.join(matching_skills[:3])}"
+        
+        ai_resume += "\n• Enhanced with industry-specific keywords and phrases"
+        ai_resume += "\n• Optimized for Applicant Tracking Systems (ATS)"
+        ai_resume += "\n• Quantified achievements and used strong action verbs"
+        
+        return ai_resume
+        
+    except Exception as e:
+        print(f"AI resume generation failed: {e}")
+        # Fallback to original method if AI fails
+        return generate_improved_resume_fallback(resume_text, job_desc, missing_skills, matching_skills)
+
+def generate_improved_resume_fallback(resume_text: str, job_desc: str, missing_skills: List[str], 
+                                    matching_skills: List[str]) -> str:
+    """Fallback resume generation if AI fails"""
+    
+    # Extract contact information
+    contact_info = extract_contact_info(resume_text)
+    name = contact_info['name'] or extract_name_from_text(resume_text)
+    email = contact_info['email']
+    phone = contact_info['phone']
+    
+    # Extract experience and education
+    experience_entries = extract_experience_entries(resume_text)
+    education_entries = extract_education_entries(resume_text)
+    actual_skills = extract_actual_skills_from_text(resume_text)
+    
+    # Generate improved resume
+    improved_resume = []
+    
+    # Professional Header
+    improved_resume.append("=" * 60)
+    improved_resume.append(f"  {name.upper()}")
+    improved_resume.append("=" * 60)
+    
+    contact_line = []
+    if email:
+        contact_line.append(f"📧 {email}")
+    if phone:
+        contact_line.append(f"📱 {phone}")
+    
+    if contact_line:
+        improved_resume.append(" | ".join(contact_line))
+    improved_resume.append("")
+    
+    # Professional Summary
+    improved_resume.append("🎯 PROFESSIONAL SUMMARY")
+    improved_resume.append("-" * 25)
+    summary = create_intelligent_summary(experience_entries, actual_skills, matching_skills, missing_skills, job_desc)
+    improved_resume.append(summary)
+    improved_resume.append("")
+    
+    # Skills Section
+    improved_resume.append("🛠️ TECHNICAL SKILLS")
+    improved_resume.append("-" * 20)
+    
+    all_skills = list(set(actual_skills + matching_skills))
+    priority_missing = [skill for skill in missing_skills[:4] if skill.lower() not in [s.lower() for s in all_skills]]
+    
+    if all_skills:
+        tech_skills = [s for s in all_skills if is_technical_skill(s)]
+        soft_skills = [s for s in all_skills if not is_technical_skill(s)]
+        
+        if tech_skills:
+            improved_resume.append(f"• Technical: {', '.join(tech_skills)}")
+        if priority_missing:
+            improved_resume.append(f"• Developing: {', '.join(priority_missing)}")
+        if soft_skills:
+            improved_resume.append(f"• Additional: {', '.join(soft_skills)}")
+    
+    improved_resume.append("")
+    
+    # Experience Section
+    if experience_entries:
+        improved_resume.append("💼 PROFESSIONAL EXPERIENCE")
+        improved_resume.append("-" * 28)
+        
+        for entry in experience_entries:
+            improved_entry = rewrite_experience_entry(entry, job_desc, matching_skills)
+            improved_resume.extend(improved_entry)
+            improved_resume.append("")
+    
+    # Education Section
+    if education_entries:
+        improved_resume.append("🎓 EDUCATION")
+        improved_resume.append("-" * 12)
+        
+        for entry in education_entries:
+            improved_resume.append(f"• {entry}")
+        improved_resume.append("")
+    
+    return '\n'.join(improved_resume)
+
 def generate_improved_resume(resume_text: str, job_desc: str, missing_skills: List[str], 
                            matching_skills: List[str]) -> str:
     """Generate a completely rewritten and improved version of the resume"""
@@ -586,8 +753,8 @@ async def tailor_resume(
         if similarity >= 0.85:
             recommendations.append("Excellent match! Your resume aligns well with the job requirements")
         
-        # Generate improved resume
-        improved_resume = generate_improved_resume(resume_text, job_desc, missing_skills, matching_skills)
+        # Generate AI-powered improved resume
+        improved_resume = generate_improved_resume_with_ai(resume_text, job_desc, missing_skills, matching_skills)
         
         # Return comprehensive results
         return {
@@ -647,8 +814,8 @@ async def tailor_resume_text(
         if similarity >= 0.85:
             recommendations.append("Excellent match! Your resume aligns well with the job requirements")
         
-        # Generate improved resume
-        improved_resume = generate_improved_resume(resume_text, job_desc, missing_skills, matching_skills)
+        # Generate AI-powered improved resume
+        improved_resume = generate_improved_resume_with_ai(resume_text, job_desc, missing_skills, matching_skills)
         
         # Return comprehensive results
         return {
